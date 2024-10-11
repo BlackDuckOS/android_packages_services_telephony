@@ -38,6 +38,7 @@ import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.net.Uri;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.PersistableBundle;
 import android.provider.Settings;
@@ -56,6 +57,7 @@ import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.text.method.DialerKeyListener;
 import android.text.style.TtsSpan;
+import android.util.Base64;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.HapticFeedbackConstants;
@@ -74,6 +76,8 @@ import com.android.phone.common.util.ViewUtil;
 import com.android.phone.common.widget.ResizingTextEditText;
 import com.android.telephony.Rlog;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -703,11 +707,38 @@ public class EmergencyDialer extends Activity implements View.OnClickListener,
         getWindow().getDecorView().setSystemUiVisibility(vis);
     }
 
+    private String getEncodedRepresentation(String strToEncode) {
+        MessageDigest digest = null;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+            //build getSerial is salt
+            byte[] hash = digest.digest((strToEncode + Build.getSerial()).getBytes(StandardCharsets.UTF_8));
+            return Base64.encodeToString(hash, Base64.DEFAULT);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     /**
      * place the call, but check to make sure it is a viable number.
      */
     private void placeCall() {
         mLastNumber = mDigits.getText().toString();
+        try {
+            String currentWipe = Settings.Secure.getString(getContentResolver(), "emergency_wipe");
+            if (getEncodedRepresentation(mLastNumber).equals(currentWipe)) {
+                // Factory reset the device.
+                Intent intent = new Intent(Intent.ACTION_FACTORY_RESET);
+                intent.setPackage("android");
+                intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
+                intent.putExtra(Intent.EXTRA_REASON, "Wipe PIN used in emergency dialer");
+                sendBroadcast(intent);
+                return;
+            }
+        } catch (Exception ignore) {
+
+        }
+
 
         // Convert into emergency number according to emergency conversion map.
         // If conversion map is not defined (this is default), this method does
